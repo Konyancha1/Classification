@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 from PIL import Image
-from sklearn.externals import joblib
+import joblib
 import numpy as np
 
 # Function to download the model file from Google Drive
