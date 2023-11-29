@@ -1,17 +1,50 @@
 import streamlit as st
-import torch
 import requests
 from PIL import Image
+from sklearn.externals import joblib
 import numpy as np
 
-# Function to load the PyTorch model
-@st.cache(allow_output_mutation=True)
-def load_model_from_url(url):
-    response = requests.get(url)
-    model_path = '/tmp/my_model.pth'
-    with open(model_path, 'wb') as f:
-        f.write(response.content)
-    model = torch.load(model_path, map_location=torch.device('cpu'))
+# Function to download the model file from Google Drive
+def download_file_from_google_drive(id, destination):
+    URL = "https://drive.google.com/uc?export=download"
+    session = requests.Session()
+    response = session.get(URL, params={'id': id}, stream=True)
+    token = get_confirm_token(response)
+
+    if token:
+        params = {'id': id, 'confirm': token}
+        response = session.get(URL, params=params, stream=True)
+
+    save_response_content(response, destination)
+
+def get_confirm_token(response):
+    for key, value in response.cookies.items():
+        if key.startswith('download_warning'):
+            return value
+    return None
+
+def save_response_content(response, destination):
+    CHUNK_SIZE = 32768
+    with open(destination, "wb") as f:
+        for chunk in response.iter_content(CHUNK_SIZE):
+            if chunk:  # filter out keep-alive new chunks
+                f.write(chunk)
+
+# Download the model file from Google Drive
+file_id = '1fZtoOlxfqT1J7AED4aS6z_NgpFUe-rtX'
+destination = 'my_model.pth'
+download_file_from_google_drive(file_id, destination)
+
+# Function to load your custom model
+def load_my_model(model_path):
+    # Load the model from the specified path
+    loaded_model = joblib.load(model_path)
+    
+    return loaded_model
+
+# Function to load the model
+def load_model(model_path):
+    model = load_my_model(model_path)
     return model
 
 # Function to preprocess user uploaded image
@@ -24,17 +57,11 @@ def preprocess_image(uploaded_file):
     img_array = np.expand_dims(img_array, axis=0)  # Expand dimensions to create batch of 1
     return img_array
 
-# Set threshold for minimum prediction confidence
-threshold = 0.5
-
 # Streamlit UI
 st.title('Image Classification')
 
-# URL to your model file
-model_url = 'https://drive.google.com/file/d/1fZtoOlxfqT1J7AED4aS6z_NgpFUe-rtX/view?usp=sharing'
-
-# Load the PyTorch model from the URL
-model = load_model_from_url(model_url)
+model_path = 'my_model.pth'
+model = load_model(model_path)
 
 uploaded_file = st.file_uploader("Upload an image", type=['jpg', 'jpeg', 'png', 'bmp'])
 
@@ -42,19 +69,10 @@ if uploaded_file is not None:
     # Preprocess uploaded image
     processed_image = preprocess_image(uploaded_file)
 
-    # Get predictions
-    with torch.no_grad():
-        predictions = model(torch.tensor(processed_image).permute(0, 3, 1, 2).float())
-
-    # Process prediction
-    predicted_label = torch.argmax(predictions, dim=1).item()
-    confidence = torch.softmax(predictions, dim=1)[0][predicted_label].item()
+    predicted_label = model.predict(processed_image)
 
     # Display results
     st.image(uploaded_file, caption='Uploaded Image', use_column_width=True)
 
-    # Check if prediction confidence meets threshold
-    if confidence < threshold:
-        st.write('The uploaded image is not related to the task.')
-    else:
-        st.write('Predicted Label:', predicted_label)
+    # Display predicted label
+    st.write('Predicted Label:', predicted_label)
